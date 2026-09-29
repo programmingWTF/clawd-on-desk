@@ -1,0 +1,615 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "name": {
+    "en": "Whale-chan",
+    "zh": "鲸鱼娘",
+    "zh-TW": "鯨魚娘"
+  },
+  "author": "rullerzhou",
+  "license": "CC BY-NC-SA 4.0",
+  "description": {
+    "en": "Whale-chan, an unofficial non-commercial fan theme.",
+    "zh": "鲸鱼娘：非官方、非商业的同人桌宠主题。"
+  },
+  "customization": {
+    "petTint": false
+  },
+  "viewBox": {
+    "x": -59.9,
+    "y": -201.8,
+    "width": 1169.8,
+    "height": 1169.8
+  },
+  "layout": {
+    "contentBox": {
+      "x": 262,
+      "y": 113,
+      "width": 461,
+      "height": 709
+    },
+    "centerX": 525.0,
+    "centerXRatio": 0.5,
+    "baselineY": 821.0,
+    "visibleHeightRatio": 0.606087,
+    "baselineBottomRatio": 0.125663
+  },
+  "fileViewBoxes": {
+    "whale-chan-idle.apng": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 960.0,
+      "height": 960.0
+    },
+    "whale-chan-thinking.apng": {
+      "x": 186.38,
+      "y": 121.62,
+      "width": 718.08,
+      "height": 718.08
+    },
+    "whale-chan-working.apng": {
+      "x": 126.48,
+      "y": 128.05,
+      "width": 849.6,
+      "height": 849.6
+    },
+    "whale-chan-rice.apng": {
+      "x": 147.14,
+      "y": 91.44,
+      "width": 883.2,
+      "height": 883.2
+    },
+    "whale-chan-tail.apng": {
+      "x": 159.12,
+      "y": 150.33,
+      "width": 700.8,
+      "height": 700.8
+    },
+    "whale-chan-rain.apng": {
+      "x": -0.0,
+      "y": -61.44,
+      "width": 998.4,
+      "height": 998.4
+    },
+    "whale-chan-pool.apng": {
+      "x": 232.0,
+      "y": 131.12,
+      "width": 772.8,
+      "height": 772.8
+    },
+    "whale-chan-conductor.apng": {
+      "x": 55.41,
+      "y": 17.3,
+      "width": 912.0,
+      "height": 912.0
+    },
+    "whale-chan-bus.apng": {
+      "x": -59.9,
+      "y": -201.8,
+      "width": 1169.8,
+      "height": 1169.8
+    },
+    "whale-chan-done.apng": {
+      "x": -102.6,
+      "y": -165.2,
+      "width": 1152.0,
+      "height": 1152.0
+    },
+    "whale-chan-drag.apng": {
+      "x": 26.42,
+      "y": -24.68,
+      "width": 921.6,
+      "height": 921.6
+    },
+    "whale-chan-notify.apng": {
+      "x": 73.59,
+      "y": 30.1,
+      "width": 870.72,
+      "height": 870.72
+    },
+    "whale-chan-poke.apng": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 960.0,
+      "height": 960.0
+    },
+    "whale-chan-error.apng": {
+      "x": 81.09,
+      "y": 33.2,
+      "width": 936.0,
+      "height": 936.0
+    },
+    "whale-chan-sleep-idle-to-dozing.apng": {
+      "x": -96.6,
+      "y": -210.6,
+      "width": 1151.98,
+      "height": 1151.98
+    },
+    "whale-chan-sleep-dozing-loop.apng": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 960.0,
+      "height": 960.0
+    },
+    "whale-chan-sleep-dozing-to-cloud.apng": {
+      "x": -100.52,
+      "y": -214.26,
+      "width": 1155.47,
+      "height": 1155.47
+    },
+    "whale-chan-sleep-idle-to-cloud.apng": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 960.0,
+      "height": 960.0
+    },
+    "whale-chan-sleep-cloud-loop.apng": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 960.0,
+      "height": 960.0
+    },
+    "whale-chan-sleep-cloud-to-idle.apng": {
+      "x": 0.0,
+      "y": 0.0,
+      "width": 960.0,
+      "height": 960.0
+    },
+    "whale-chan-bus-left.apng": {
+      "x": -59.9,
+      "y": -201.8,
+      "width": 1169.8,
+      "height": 1169.8
+    }
+  },
+  "eyeTracking": {
+    "enabled": false,
+    "states": []
+  },
+  "sleepSequence": {
+    "mode": "full"
+  },
+  "states": {
+    "idle": [
+      "whale-chan-idle.apng"
+    ],
+    "thinking": [
+      "whale-chan-thinking.apng"
+    ],
+    "working": [
+      "whale-chan-working.apng"
+    ],
+    "juggling": [
+      "whale-chan-rice.apng"
+    ],
+    "attention": [
+      "whale-chan-done.apng"
+    ],
+    "notification": [
+      "whale-chan-notify.apng"
+    ],
+    "error": [
+      "whale-chan-error.apng"
+    ],
+    "sweeping": [
+      "whale-chan-tail.apng"
+    ],
+    "carrying": [
+      "whale-chan-pool.apng"
+    ],
+    "yawning": [
+      "whale-chan-sleep-idle-to-dozing.apng"
+    ],
+    "dozing": [
+      "whale-chan-sleep-dozing-loop.apng"
+    ],
+    "collapsing": [
+      "whale-chan-sleep-dozing-to-cloud.apng"
+    ],
+    "sleeping": [
+      "whale-chan-sleep-cloud-loop.apng"
+    ],
+    "waking": [
+      "whale-chan-sleep-cloud-to-idle.apng"
+    ],
+    "roam": [
+      "whale-chan-bus.apng"
+    ]
+  },
+  "workingTiers": [
+    {
+      "minSessions": 3,
+      "file": "whale-chan-rain.apng"
+    },
+    {
+      "minSessions": 2,
+      "file": "whale-chan-rice.apng"
+    },
+    {
+      "minSessions": 1,
+      "file": "whale-chan-working.apng"
+    }
+  ],
+  "jugglingTiers": [
+    {
+      "minSessions": 1,
+      "file": "whale-chan-rice.apng"
+    }
+  ],
+  "displayHintMap": {
+    "clawd-working-building.svg": "whale-chan-rain.apng",
+    "clawd-working-typing.svg": "whale-chan-working.apng",
+    "clawd-headphones-groove.svg": "whale-chan-rice.apng",
+    "clawd-working-juggling.svg": "whale-chan-rice.apng",
+    "clawd-working-conducting.svg": "whale-chan-rain.apng",
+    "clawd-working-thinking.svg": "whale-chan-thinking.apng"
+  },
+  "idleAnimations": [
+    {
+      "file": "whale-chan-conductor.apng",
+      "duration": 5017
+    }
+  ],
+  "idleVisualOptions": [
+    {
+      "file": "whale-chan-pool.apng"
+    }
+  ],
+  "timings": {
+    "minDisplay": {
+      "attention": 4500,
+      "notification": 6722,
+      "error": 4208,
+      "sweeping": 4450,
+      "carrying": 5017,
+      "working": 1000,
+      "thinking": 1000
+    },
+    "autoReturn": {
+      "attention": 4500,
+      "notification": 6722,
+      "error": 4208,
+      "sweeping": 298150,
+      "carrying": 5017
+    },
+    "yawnDuration": 5017,
+    "collapseDuration": 5017,
+    "wakeDuration": 5017,
+    "dndSleepTransitionSvg": "whale-chan-sleep-idle-to-cloud.apng",
+    "dndSleepTransitionDuration": 5017,
+    "deepSleepTimeout": 600000,
+    "mouseIdleTimeout": 20000,
+    "mouseSleepTimeout": 60000
+  },
+  "reactions": {
+    "drag": {
+      "file": "whale-chan-drag.apng"
+    },
+    "clickLeft": {
+      "file": "whale-chan-poke.apng",
+      "duration": 5042
+    },
+    "clickRight": {
+      "file": "whale-chan-poke.apng",
+      "duration": 5042
+    },
+    "annoyed": {
+      "file": "whale-chan-poke.apng",
+      "duration": 5042
+    },
+    "double": {
+      "files": [
+        "whale-chan-poke.apng"
+      ],
+      "duration": 5042
+    }
+  },
+  "hitBoxes": {
+    "default": {
+      "x": 255.0,
+      "y": 106.0,
+      "w": 475.0,
+      "h": 724.0
+    },
+    "sleeping": {
+      "x": 166.0,
+      "y": 196.0,
+      "w": 669.0,
+      "h": 536.0
+    },
+    "wide": {
+      "x": 148.8,
+      "y": 115.9,
+      "w": 698.2,
+      "h": 652.3
+    }
+  },
+  "fileHitBoxes": {
+    "whale-chan-idle.apng": {
+      "x": 255.0,
+      "y": 106.0,
+      "w": 475.0,
+      "h": 724.0
+    },
+    "whale-chan-thinking.apng": {
+      "x": 313.0,
+      "y": 121.8,
+      "w": 421.4,
+      "h": 707.9
+    },
+    "whale-chan-working.apng": {
+      "x": 246.8,
+      "y": 245.7,
+      "w": 678.0,
+      "h": 584.1
+    },
+    "whale-chan-rice.apng": {
+      "x": 219.2,
+      "y": 212.3,
+      "w": 651.7,
+      "h": 615.9
+    },
+    "whale-chan-tail.apng": {
+      "x": 153.3,
+      "y": 147.5,
+      "w": 595.6,
+      "h": 675.2
+    },
+    "whale-chan-rain.apng": {
+      "x": 127.2,
+      "y": -20.6,
+      "w": 793.9,
+      "h": 870.9
+    },
+    "whale-chan-pool.apng": {
+      "x": 275.5,
+      "y": 235.8,
+      "w": 694.6,
+      "h": 594.0
+    },
+    "whale-chan-conductor.apng": {
+      "x": 188.0,
+      "y": 102.4,
+      "w": 641.1,
+      "h": 727.6
+    },
+    "whale-chan-bus.apng": {
+      "x": 148.8,
+      "y": 115.9,
+      "w": 698.2,
+      "h": 652.3
+    },
+    "whale-chan-done.apng": {
+      "x": 195.4,
+      "y": -151.6,
+      "w": 598.0,
+      "h": 984.4
+    },
+    "whale-chan-drag.apng": {
+      "x": 174.9,
+      "y": 95.9,
+      "w": 661.2,
+      "h": 753.2
+    },
+    "whale-chan-notify.apng": {
+      "x": 280.6,
+      "y": 111.0,
+      "w": 509.4,
+      "h": 718.9
+    },
+    "whale-chan-poke.apng": {
+      "x": 242.0,
+      "y": 93.0,
+      "w": 549.0,
+      "h": 738.0
+    },
+    "whale-chan-error.apng": {
+      "x": 286.6,
+      "y": 26.1,
+      "w": 593.2,
+      "h": 819.4
+    },
+    "whale-chan-sleep-idle-to-dozing.apng": {
+      "x": 169.0,
+      "y": -199.4,
+      "w": 668.8,
+      "h": 1045.6
+    },
+    "whale-chan-sleep-dozing-loop.apng": {
+      "x": 190.0,
+      "y": 199.0,
+      "w": 638.0,
+      "h": 550.0
+    },
+    "whale-chan-sleep-dozing-to-cloud.apng": {
+      "x": 119.0,
+      "y": 188.2,
+      "w": 797.1,
+      "h": 626.2
+    },
+    "whale-chan-sleep-idle-to-cloud.apng": {
+      "x": 160.0,
+      "y": 43.0,
+      "w": 741.0,
+      "h": 924.0
+    },
+    "whale-chan-sleep-cloud-loop.apng": {
+      "x": 166.0,
+      "y": 196.0,
+      "w": 669.0,
+      "h": 536.0
+    },
+    "whale-chan-sleep-cloud-to-idle.apng": {
+      "x": 164.0,
+      "y": 49.0,
+      "w": 692.0,
+      "h": 780.0
+    },
+    "whale-chan-mini-enter.apng": {
+      "x": 40.0,
+      "y": 215.0,
+      "w": 880.0,
+      "h": 509.0
+    },
+    "whale-chan-mini-idle.apng": {
+      "x": 91.7,
+      "y": 245.3,
+      "w": 776.6,
+      "h": 454.8
+    },
+    "whale-chan-mini-peek.apng": {
+      "x": 85.0,
+      "y": 242.0,
+      "w": 790.0,
+      "h": 460.0
+    },
+    "whale-chan-mini-working.apng": {
+      "x": 82.0,
+      "y": 40.0,
+      "w": 796.0,
+      "h": 675.0
+    },
+    "whale-chan-mini-alert.apng": {
+      "x": 93.0,
+      "y": 245.0,
+      "w": 774.0,
+      "h": 453.0
+    },
+    "whale-chan-mini-happy.apng": {
+      "x": 94.0,
+      "y": 246.0,
+      "w": 772.0,
+      "h": 452.0
+    },
+    "whale-chan-mini-sleep-enter.apng": {
+      "x": 92.0,
+      "y": 246.0,
+      "w": 776.0,
+      "h": 468.0
+    },
+    "whale-chan-mini-sleep-idle.apng": {
+      "x": 94.0,
+      "y": 246.0,
+      "w": 772.0,
+      "h": 452.0
+    },
+    "whale-chan-mini-sleep-peek.apng": {
+      "x": 93.0,
+      "y": 246.0,
+      "w": 774.0,
+      "h": 451.0
+    },
+    "whale-chan-mini-peek-hold.apng": {
+      "x": 85.0,
+      "y": 242.0,
+      "w": 790.0,
+      "h": 460.0
+    },
+    "whale-chan-bus-left.apng": {
+      "x": 148.8,
+      "y": 115.9,
+      "w": 698.2,
+      "h": 652.3
+    },
+    "whale-chan-mini-sleep-enter-left.apng": {
+      "x": 92.0,
+      "y": 246.0,
+      "w": 776.0,
+      "h": 468.0
+    },
+    "whale-chan-mini-sleep-left.apng": {
+      "x": 94.0,
+      "y": 246.0,
+      "w": 772.0,
+      "h": 452.0
+    },
+    "whale-chan-mini-sleep-peek-left.apng": {
+      "x": 93.0,
+      "y": 246.0,
+      "w": 774.0,
+      "h": 451.0
+    }
+  },
+  "mirroredFiles": {
+    "whale-chan-mini-sleep-enter.apng": "whale-chan-mini-sleep-enter-left.apng",
+    "whale-chan-mini-sleep-idle.apng": "whale-chan-mini-sleep-left.apng",
+    "whale-chan-mini-sleep-peek.apng": "whale-chan-mini-sleep-peek-left.apng",
+    "whale-chan-bus.apng": "whale-chan-bus-left.apng"
+  },
+  "miniMode": {
+    "supported": true,
+    "offsetRatio": 0.521647,
+    "viewBox": {
+      "x": 0,
+      "y": 0,
+      "width": 960,
+      "height": 960
+    },
+    "states": {
+      "mini-enter": [
+        "whale-chan-mini-enter.apng"
+      ],
+      "mini-idle": [
+        "whale-chan-mini-idle.apng"
+      ],
+      "mini-peek": [
+        "whale-chan-mini-peek.apng"
+      ],
+      "mini-peek-hold": [
+        "whale-chan-mini-peek-hold.apng"
+      ],
+      "mini-working": [
+        "whale-chan-mini-working.apng"
+      ],
+      "mini-alert": [
+        "whale-chan-mini-alert.apng"
+      ],
+      "mini-happy": [
+        "whale-chan-mini-happy.apng"
+      ],
+      "mini-enter-sleep": [
+        "whale-chan-mini-sleep-enter.apng"
+      ],
+      "mini-sleep": [
+        "whale-chan-mini-sleep-idle.apng"
+      ],
+      "mini-sleep-peek": [
+        "whale-chan-mini-sleep-peek.apng"
+      ],
+      "mini-crabwalk": [
+        "whale-chan-bus.apng"
+      ]
+    },
+    "timings": {
+      "autoReturn": {
+        "mini-peek": 1292,
+        "mini-alert": 3583,
+        "mini-happy": 3500
+      },
+      "minDisplay": {
+        "mini-alert": 3583,
+        "mini-happy": 3500
+      }
+    },
+    "peek": {
+      "offsetRatio": 0.096774,
+      "delayMs": 375,
+      "durationMs": 125
+    },
+    "sleepPeek": {
+      "offsetRatio": 0.096774,
+      "delayMs": 0,
+      "durationMs": 750
+    }
+  },
+  "objectScale": {
+    "widthRatio": 0.774193,
+    "heightRatio": 0.774193,
+    "offsetX": 0.112903,
+    "offsetY": 0.112903,
+    "imgWidthRatio": 0.774193,
+    "imgOffsetX": 0.112903,
+    "imgBottom": 0.112903,
+    "objBottom": 0.112903
+  }
+}
