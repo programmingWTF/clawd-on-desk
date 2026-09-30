@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "name": {
     "en": "Whale-chan",
     "zh": "鲸鱼娘",
@@ -31,7 +31,7 @@
     "centerX": 525.0,
     "centerXRatio": 0.5,
     "baselineY": 821.0,
-    "visibleHeightRatio": 0.606087,
+    "visibleHeightRatio": 0.47,
     "baselineBottomRatio": 0.125663
   },
   "fileViewBoxes": {
