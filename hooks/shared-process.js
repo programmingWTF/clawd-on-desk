@@ -537,6 +537,54 @@ function claudePromote(pidCache, namespace, sessionId, cacheCwd, deriveHeadless)
   return cacheHitMetadata(sanitized, "v1");
 }
 
+// Resolves the terminal that hosts a herdr client (#1139). herdr exposes no CLI
+// that maps a pane to the client showing it, so every `herdr` process other than
+// the server is a candidate. Processes re-parented to launchd/init are skipped:
+// that is what a detached server looks like, including servers on other sockets.
+//
+// One client: its walk is appended to pidChain exactly like the tmux bridge, so
+// the Ghostty / iTerm focus helpers can pick the right surface by pid or tty.
+// Several clients all inside the same terminal app (several Ghostty windows):
+// raise that app but append no client pid, since nothing says which window shows
+// this pane and a wrong guess would select someone else's surface. Several
+// clients in different terminals: refuse to guess.
+function findHerdrHostTerminal(execFileSync, serverPid, terminalNames) {
+  let table;
+  try {
+    table = execFileSync("ps", ["-A", "-o", "pid=,ppid=,comm="], { encoding: "utf8", timeout: 1000 });
+  } catch {
+    return null;
+  }
+  const procs = new Map();
+  for (const line of String(table || "").split("\n")) {
+    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/);
+    if (!m) continue;
+    procs.set(Number(m[1]), { ppid: Number(m[2]), name: normalizePosixProcessName(m[3]) });
+  }
+  const hosts = [];
+  for (const [pid, info] of procs) {
+    if (pid === serverPid || info.name !== "herdr" || info.ppid <= 1) continue;
+    const walked = [];
+    let walkPid = pid;
+    for (let t = 0; t < 6; t++) {
+      const cur = procs.get(walkPid);
+      if (!cur) break;
+      walked.push(walkPid);
+      if (terminalNames.has(cur.name)) {
+        hosts.push({ terminalPid: walkPid, chainAdds: walked });
+        break;
+      }
+      if (!cur.ppid || cur.ppid <= 1 || cur.ppid === walkPid) break;
+      walkPid = cur.ppid;
+    }
+  }
+  if (hosts.length === 0) return null;
+  if (hosts.length === 1) return hosts[0];
+  const terminalPid = hosts[0].terminalPid;
+  if (!hosts.every((h) => h.terminalPid === terminalPid)) return null;
+  return { terminalPid, chainAdds: [terminalPid] };
+}
+
 function createPidResolver(options) {
   const { platformConfig } = options;
   const { terminalNames, systemBoundary, editorMap, editorPathChecks } = platformConfig;
@@ -622,6 +670,7 @@ function createPidResolver(options) {
     let agentPid = null;
     let agentProcessStartIdentity = null;
     let agentCommandLine = "";
+    let herdrServerPid = null;
     const pidChain = [];
 
     for (let i = 0; i < maxDepth; i++) {
@@ -677,6 +726,7 @@ function createPidResolver(options) {
       }
 
       if (systemBoundary.has(name)) break;
+      if (!herdrServerPid && name === "herdr") herdrServerPid = pid;
       if (terminalNames.has(name)) terminalPid = pid;
       lastGoodPid = pid;
       if (!parentPid || parentPid === pid || parentPid <= 1) break;
@@ -729,6 +779,21 @@ function createPidResolver(options) {
             }
           }
         } catch {}
+      }
+    }
+
+    // herdr (#1139) detaches its panes the same way tmux does, so the walk above
+    // ends at the `herdr server` and never meets the terminal. Unlike tmux there
+    // is no list-clients to ask, so read the process table once and walk up from
+    // every other `herdr` process. Only reached when HERDR_ENV is set AND the walk
+    // itself passed through a herdr process: a shell that merely inherited the
+    // env from a herdr pane (another terminal launched from it) has its own
+    // terminal in the chain and never gets here.
+    if (!isWin && !terminalPid && herdrServerPid && process.env.HERDR_ENV === "1") {
+      const host = findHerdrHostTerminal(execFileSync, herdrServerPid, terminalNames);
+      if (host) {
+        terminalPid = host.terminalPid;
+        pidChain.push(...host.chainAdds);
       }
     }
 
