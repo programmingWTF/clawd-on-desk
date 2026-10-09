@@ -712,6 +712,20 @@ function normalizeOrcaPaneKey(value) {
   return /^[\w-]+:[\w-]+$/.test(trimmed) ? trimmed : null;
 }
 
+// "w5:p4" from $HERDR_PANE_ID (#1139). It becomes a CLI argument, so a leading
+// "-" (which the \w- class would otherwise allow) is rejected as well.
+function normalizeHerdrPaneId(value) {
+  const paneId = normalizeOrcaPaneKey(value);
+  return paneId && !paneId.startsWith("-") ? paneId : null;
+}
+
+function normalizeHerdrSocket(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 4096 || !trimmed.startsWith("/")) return null;
+  return /[\0\r\n]/.test(trimmed) ? null : trimmed;
+}
+
 function normalizeFocusRequest(sourcePidOrRequest, cwd, editor, pidChain, meta = {}) {
   if (sourcePidOrRequest && typeof sourcePidOrRequest === "object" && !Array.isArray(sourcePidOrRequest)) {
     const request = sourcePidOrRequest;
@@ -728,6 +742,8 @@ function normalizeFocusRequest(sourcePidOrRequest, cwd, editor, pidChain, meta =
       tmuxSocket: normalizeTmuxSocket(request.tmuxSocket ?? request.tmux_socket),
       tmuxClient: normalizeTmuxClient(request.tmuxClient ?? request.tmux_client),
       orcaPaneKey: normalizeOrcaPaneKey(request.orcaPaneKey ?? request.orca_pane_key),
+      herdrPaneId: normalizeHerdrPaneId(request.herdrPaneId ?? request.herdr_pane_id),
+      herdrSocket: normalizeHerdrSocket(request.herdrSocket ?? request.herdr_socket),
     };
   }
 
@@ -744,6 +760,8 @@ function normalizeFocusRequest(sourcePidOrRequest, cwd, editor, pidChain, meta =
     tmuxSocket: normalizeTmuxSocket(meta && (meta.tmuxSocket ?? meta.tmux_socket)),
     tmuxClient: normalizeTmuxClient(meta && (meta.tmuxClient ?? meta.tmux_client)),
     orcaPaneKey: normalizeOrcaPaneKey(meta && (meta.orcaPaneKey ?? meta.orca_pane_key)),
+    herdrPaneId: normalizeHerdrPaneId(meta && (meta.herdrPaneId ?? meta.herdr_pane_id)),
+    herdrSocket: normalizeHerdrSocket(meta && (meta.herdrSocket ?? meta.herdr_socket)),
   };
 }
 
@@ -909,6 +927,7 @@ function logFocusRequest(request) {
     `wtHwnd=${request.wtHwnd ? "1" : "-"}`,
     `ghosttyId=${summarizeOpaqueId(request.ghosttyTerminalId)}`,
     `orcaPane=${summarizeOpaqueId(request.orcaPaneKey)}`,
+    `herdrPane=${summarizeOpaqueId(request.herdrPaneId)}`,
   ].join(" "));
 }
 
@@ -1224,6 +1243,59 @@ function scheduleOrcaPaneFocus(orcaPaneKey, cwd) {
       if (cached) switchTo(cached, "exact", true);
       else resolveThenSwitch();
     }, ORCA_PANE_FOCUS_DELAY_MS);
+  });
+}
+
+const HERDR_CLI_TIMEOUT_MS = 3000;
+
+function herdrCliCandidates() {
+  // Same reason as orcaCliCandidates: a Finder-launched app only has launchd's
+  // PATH, which holds none of the places herdr gets installed. The binary path
+  // a hook could report (HERDR_BIN_PATH) is deliberately never used: it would let
+  // a /state body choose which executable the app runs.
+  const candidates = ["herdr"];
+  if (isMac) candidates.push("/opt/homebrew/bin/herdr", "/usr/local/bin/herdr");
+  const home = typeof os.homedir === "function" ? os.homedir() : "";
+  if (home) {
+    candidates.push(
+      path.posix.join(home, ".cargo", "bin", "herdr"),
+      path.posix.join(home, ".local", "bin", "herdr"),
+    );
+  }
+  return candidates;
+}
+
+// herdr (#1139) keeps its panes on a detached server, so the window raise (done
+// by the generic path from the client's terminal, see the herdr bridge in
+// hooks/shared-process.js) cannot also pick the pane. `herdr agent focus` does
+// that on the server side, which every attached client then shows, so it needs
+// no ordering against the raise. Resolves — never rejects — with { ok, reason }.
+function scheduleHerdrPaneFocus(herdrPaneId, herdrSocket) {
+  const paneId = normalizeHerdrPaneId(herdrPaneId);
+  if (!paneId || isWin) return Promise.resolve({ ok: false, reason: "no-pane-id" });
+  const socket = normalizeHerdrSocket(herdrSocket);
+  const env = socket ? { ...process.env, HERDR_SOCKET_PATH: socket } : process.env;
+  const candidates = herdrCliCandidates();
+  return new Promise((resolve) => {
+    const done = (ok, reason, detail = "") => {
+      logFocusResult(`branch=herdr reason=${reason}${detail}`);
+      resolve({ ok, reason });
+    };
+    const tryNext = (idx) => {
+      if (idx >= candidates.length) return done(false, "herdr-cli-not-found");
+      execFile(candidates[idx], ["agent", "focus", paneId], {
+        timeout: HERDR_CLI_TIMEOUT_MS,
+        encoding: "utf8",
+        env,
+      }, (err, _stdout, stderr) => {
+        if (err && (err.code === "ENOENT" || err.code === 127)) return tryNext(idx + 1);
+        if (!err) return done(true, "herdr-pane-focused");
+        if (err.killed) return done(false, "herdr-cli-timeout");
+        const detail = String(stderr || "").split("\n")[0].slice(0, 160);
+        return done(false, "herdr-focus-failed", ` code=${safeLogValue(err.code)} detail=${safeLogValue(detail)}`);
+      });
+    };
+    tryNext(0);
   });
 }
 
@@ -1917,6 +1989,7 @@ function executeMacFocusRequest(request) {
   // the pane key is only ever set by an Orca-hosted session, and the ten-marker env
   // gate has already rejected the shells that merely inherited it.
   const orcaPane = scheduleOrcaPaneFocus(request.orcaPaneKey, request.cwd);
+  scheduleHerdrPaneFocus(request.herdrPaneId, request.herdrSocket);
   // The guard must span the CLI hops as well as the raise: released early, the next
   // request starts a second pane switch while this one is still in flight.
   if (orcaOwnsRaise) orcaPane.then(finalize, finalize);
@@ -2160,6 +2233,7 @@ function focusTerminalWindow(sourcePidOrRequest, cwd, editor, pidChain, meta) {
     focusTerminalWindowLegacy(request);
     scheduleTerminalTabFocus(request.editor, request.pidChain);
     scheduleTmuxPaneFocus(request.pidChain, request.tmuxSocket, request.tmuxClient);
+    scheduleHerdrPaneFocus(request.herdrPaneId, request.herdrSocket);
     logFocusResult("branch=linux-command-submitted");
     return normalizeFocusResultPayload({ reason: "linux-command-submitted" });
   }
@@ -2397,6 +2471,9 @@ return {
     normalizeOrcaWorktreePath,
     orcaCliCandidates,
     orcaHandleCache,
+    scheduleHerdrPaneFocus,
+    normalizeHerdrPaneId,
+    herdrCliCandidates,
     ORCA_PANE_FOCUS_DELAY_MS,
     __setTmuxBin,
     resolveTmuxBin,

@@ -2681,6 +2681,8 @@ function focusTerminalSession(session, sessionId, requestSource) {
     tmuxSocket: session.tmuxSocket,
     tmuxClient: session.tmuxClient,
     orcaPaneKey: session.orcaPaneKey,
+    herdrPaneId: session.herdrPaneId,
+    herdrSocket: session.herdrSocket,
     ghosttyTerminalId: session.ghosttyTerminalId,
     sessionId: String(sessionId),
     agentId: session.agentId,

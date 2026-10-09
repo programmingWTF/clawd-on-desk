@@ -125,15 +125,40 @@ function orcaPaneKeyFromEnv(env = process.env) {
   return normalizeOrcaPaneKey(env.ORCA_PANE_KEY);
 }
 
+// herdr (#1139) sets HERDR_ENV=1 and HERDR_PANE_ID ("w5:p4") in every pane, and
+// `herdr agent focus <pane id>` switches the server to it. TERM_PROGRAM is the
+// OUTER terminal's (herdr passes it through), so unlike Orca it cannot say who
+// the innermost host is; HERDR_ENV is the marker, and the same nested-terminal
+// veto applies: tmux/zellij/screen started inside a herdr pane own the session
+// from there on, and so does a terminal launched from it. Remote hooks never
+// send it: the pane belongs to a herdr server on the remote host, which the
+// local CLI cannot reach (the server strips it as well).
+function herdrPaneFromEnv(env = process.env) {
+  if (!env || env.HERDR_ENV !== "1") return null;
+  if (isRemoteHookMode({ env })) return null;
+  if (NESTED_TERMINAL_ENV.some((key) => env[key])) return null;
+  const paneId = normalizeOrcaPaneKey(env.HERDR_PANE_ID);
+  if (!paneId) return null;
+  return { paneId, socket: normalizeTmuxSocketPath(env.HERDR_SOCKET_PATH) };
+}
+
 // Deliberately NOT part of the resolver result: the #674 red line freezes the
 // no-arg resolve() shape, and this value owes nothing to the process walk
 // anyway. Reading it per body instead also means it survives a cache hit or a
 // failed snapshot, both of which return a walk-derived object with no room for
 // it. `env` is injectable so a body-shape assertion stays hermetic instead of
 // depending on whether the suite happens to be running inside Orca.
+//
+// Also carries the herdr pane (#1139) for the same reasons, so every adapter
+// that already ships the Orca key ships this one without another call site.
 function applyOrcaPaneKey(body, env = process.env) {
   const orcaPaneKey = orcaPaneKeyFromEnv(env);
   if (orcaPaneKey) body.orca_pane_key = orcaPaneKey;
+  const herdr = herdrPaneFromEnv(env);
+  if (herdr) {
+    body.herdr_pane_id = herdr.paneId;
+    if (herdr.socket) body.herdr_socket = herdr.socket;
+  }
   return body;
 }
 
@@ -1176,6 +1201,7 @@ module.exports = {
   tmuxSocketFromEnv,
   orcaPaneKeyFromEnv,
   applyOrcaPaneKey,
+  herdrPaneFromEnv,
   NESTED_TERMINAL_ENV,
   processAlive,
   WINDOWS_TERMINAL_WINDOW_CLASS,
