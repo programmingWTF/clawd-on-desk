@@ -2209,6 +2209,11 @@ function resolveMacAppBundle(pidCandidates, callback) {
   });
 }
 
+// A candidate list made only of background processes (a multiplexer server such
+// as herdr's, re-parented to launchd, plus the shells under it) matches nothing
+// in System Events. The loop then falls through without raising anything, so the
+// script has to say so: logging that as `ok` made those clicks look like a
+// successful focus in focus-debug.log (#1139, #1001, #662).
 function focusMacAppViaSystemEvents(pidCandidates, onDone) {
   const applePidList = pidCandidates.join(", ");
   const script = `
@@ -2218,17 +2223,20 @@ function focusMacAppViaSystemEvents(pidCandidates, onDone) {
         set pList to every process whose unix id is pidValue
         if (count of pList) > 0 then
           set frontmost of item 1 of pList to true
-          exit repeat
+          return "ok"
         end if
       end repeat
-    end tell`;
-  execFile("osascript", ["-e", script], { timeout: MAC_FOCUS_CONSENT_TIMEOUT_MS }, (err, _stdout, stderr) => {
+    end tell
+    return "no-gui-process"`;
+  execFile("osascript", ["-e", script], { timeout: MAC_FOCUS_CONSENT_TIMEOUT_MS }, (err, stdout, stderr) => {
     if (err) {
       const detail = String(stderr || err.message || "").split("\n")[0].slice(0, 160);
       const reason = detail.includes("-1743")
         ? "automation-denied"
         : `osascript-failed:${safeLogValue(err.signal || err.code || "error")}`;
       logFocusResult(`branch=mac-frontmost reason=${reason} detail=${safeLogValue(detail)}`);
+    } else if (String(stdout || "").trim() === "no-gui-process") {
+      logFocusResult(`branch=mac-frontmost reason=no-gui-process pids=${safeLogValue(pidCandidates.join(","))}`);
     } else {
       logFocusResult("branch=mac-frontmost reason=ok");
     }
