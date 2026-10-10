@@ -72,6 +72,7 @@ test("settings-i18n.js: all language packs include remote-openclaw keys", () => 
     "remoteOpenclawSaved",
     "remoteOpenclawStatusLabel",
     "remoteOpenclawStatusIdle",
+    "remoteOpenclawReadOnlyNote",
   ];
   for (const key of REQUIRED_KEYS) {
     const matches = code.match(new RegExp(`\\b${key}\\b`, "g")) || [];

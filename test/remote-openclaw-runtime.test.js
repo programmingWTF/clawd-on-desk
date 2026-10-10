@@ -100,7 +100,15 @@ test("a successful handshake reports connected and clears the retry counter", ()
     ok: true,
     payload: { type: "hello-ok", protocol: GATEWAY_PROTOCOL_VERSION },
   }));
-  assert.deepEqual(statuses[statuses.length - 1], { phase: "connected", detail: "", at: NOW });
+  // An absent `auth` block means an empty scope list: the normal case for
+  // password/token auth, and the reason the health snapshot drives the state.
+  assert.deepEqual(statuses[statuses.length - 1], {
+    phase: "connected",
+    detail: "",
+    at: NOW,
+    scopes: [],
+  });
+  assert.deepEqual(runtime.getGrantedScopes(), []);
   runtime.stop();
 });
 
@@ -178,10 +186,159 @@ test("heartbeat broadcasts are dropped instead of nudging the pet", () => {
   runtime.start();
   const socket = sockets[0];
   socket.emit("message", connectFrame());
-  for (const event of ["tick", "health", "presence", "models.snapshot"]) {
+  // `health` is deliberately absent: it is the one broadcast that DOES move
+  // the pet, and has its own cases below.
+  for (const event of ["tick", "presence", "models.snapshot"]) {
     socket.emit("message", JSON.stringify({ type: "event", event, payload: {} }));
   }
   assert.equal(delivered.length, 0);
+  runtime.stop();
+});
+
+// ── health snapshot → /state ──
+//
+// A credential-only connection never receives `session.*` (they are gated on
+// `operator.read`), so this is the path that actually drives the pet.
+
+function healthPayload(overrides = {}) {
+  return {
+    ok: true,
+    ts: NOW,
+    sessions: {
+      path: "/state/sessions.json",
+      count: 3,
+      recent: [{ key: "agent:main:discord", updatedAt: NOW - 4000, age: 4000 }],
+    },
+    agents: [],
+    ...overrides,
+  };
+}
+
+function healthFrame(payload) {
+  return JSON.stringify({ type: "event", event: "health", payload });
+}
+
+function connectedHarness(options = {}) {
+  const harness = createHarness(options);
+  harness.runtime.start();
+  const socket = harness.sockets[0];
+  socket.emit("message", connectFrame());
+  socket.emit("message", JSON.stringify({
+    type: "res",
+    id: `connect-${NOW}`,
+    ok: true,
+    payload: { type: "hello-ok", protocol: GATEWAY_PROTOCOL_VERSION, auth: options.auth },
+  }));
+  return { ...harness, socket };
+}
+
+test("a health snapshot showing a fresh session paints working", () => {
+  const { runtime, socket, delivered, activities } = connectedHarness({ password: "pw" });
+  socket.emit("message", healthFrame(healthPayload()));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].state, "working");
+  assert.equal(delivered[0].event, "PreToolUse");
+  assert.equal(delivered[0].session_id, "agent:main:discord");
+  assert.equal(delivered[0].hook_source, "remote-openclaw");
+  assert.equal(activities[activities.length - 1].gatewayEvent, "health");
+  runtime.stop();
+});
+
+test("an unchanged health snapshot is not re-posted", () => {
+  const { runtime, socket, delivered } = connectedHarness({ password: "pw" });
+  socket.emit("message", healthFrame(healthPayload()));
+  socket.emit("message", healthFrame(healthPayload()));
+  // The pet holds the last state it was given, so repeating it is noise.
+  assert.equal(delivered.length, 1);
+  runtime.stop();
+});
+
+test("a session going quiet moves the pet back to idle", () => {
+  const { runtime, socket, delivered } = connectedHarness({ password: "pw" });
+  socket.emit("message", healthFrame(healthPayload()));
+  socket.emit("message", healthFrame(healthPayload({
+    sessions: { count: 3, recent: [{ key: "agent:main:discord", updatedAt: NOW - 900_000, age: 900_000 }] },
+  })));
+  assert.equal(delivered.length, 2);
+  assert.equal(delivered[1].state, "idle");
+  runtime.stop();
+});
+
+test("a degraded event loop posts an error with error_present", () => {
+  const { runtime, socket, delivered } = connectedHarness({ password: "pw" });
+  socket.emit("message", healthFrame(healthPayload({ eventLoop: { degraded: true, reasons: ["cpu"] } })));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].state, "error");
+  assert.equal(delivered[0].event, "StopFailure");
+  assert.equal(delivered[0].error_present, true);
+  runtime.stop();
+});
+
+test("the hello snapshot paints a state without waiting a full refresh period", () => {
+  const { runtime, sockets, delivered } = createHarness({ password: "pw" });
+  runtime.start();
+  const socket = sockets[0];
+  socket.emit("message", connectFrame());
+  socket.emit("message", JSON.stringify({
+    type: "res",
+    id: `connect-${NOW}`,
+    ok: true,
+    payload: {
+      type: "hello-ok",
+      protocol: GATEWAY_PROTOCOL_VERSION,
+      auth: { method: "password", role: "operator", scopes: [] },
+      snapshot: { health: healthPayload(), uptimeMs: 10 },
+    },
+  }));
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].state, "working");
+  assert.deepEqual(runtime.getGrantedScopes(), []);
+  runtime.stop();
+});
+
+test("granted scopes are reported so the UI can explain the read-only path", () => {
+  const { runtime, sockets } = createHarness({ password: "pw" });
+  runtime.start();
+  const socket = sockets[0];
+  socket.emit("message", connectFrame());
+  socket.emit("message", JSON.stringify({
+    type: "res",
+    id: `connect-${NOW}`,
+    ok: true,
+    payload: {
+      type: "hello-ok",
+      protocol: GATEWAY_PROTOCOL_VERSION,
+      auth: { method: "password", role: "operator", scopes: ["operator.read"] },
+    },
+  }));
+  assert.deepEqual(runtime.getGrantedScopes(), ["operator.read"]);
+  runtime.stop();
+});
+
+test("the agent filter applies to the health snapshot too", () => {
+  const { runtime, socket, delivered } = connectedHarness({
+    password: "pw",
+    sessionFilter: { agentId: "main", sessionId: "main" },
+  });
+  socket.emit("message", healthFrame(healthPayload({
+    agents: [
+      { agentId: "main", name: "Lobster", sessions: { count: 1, recent: [] } },
+    ],
+  })));
+  // The gateway-wide snapshot is fresh, but the filtered agent has no recent
+  // sessions — following the gateway here would defeat the filter.
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].state, "idle");
+  runtime.stop();
+});
+
+test("an approval is not talked out of by a coarse health snapshot", () => {
+  const { runtime, socket, delivered } = connectedHarness({ password: "pw" });
+  socket.emit("message", JSON.stringify({ type: "event", event: "session.approval", payload: {} }));
+  assert.equal(delivered[0].state, "attention");
+  socket.emit("message", healthFrame(healthPayload()));
+  // Still waiting on a human: the health snapshot must not say "working".
+  assert.equal(delivered.length, 1);
   runtime.stop();
 });
 

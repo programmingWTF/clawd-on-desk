@@ -15,8 +15,17 @@
 //     FORBIDDEN / MISSING_SCOPE. Scope upgrade goes through
 //     `device.scopes.requestUpgrade`, which requires a *paired browser*
 //     identity (DEVICE_IDENTITY_REQUIRED) and is therefore unavailable to a
-//     native desktop client. We rely on the gateway's own broadcast instead,
-//     which is delivered to operator connections as `gateway-owner`.
+//     native desktop client.
+//
+//   - Because of that empty scope list the gateway also withholds every
+//     `session.*` broadcast (`session.tool`, `session.typing`, ...) — they all
+//     require `operator.read`. The one activity-bearing broadcast an unscoped
+//     client still receives is `health`, refreshed every 60s, which carries
+//     per-session and per-agent recency. That snapshot is therefore the
+//     PRIMARY state source here, not a fallback: see `deriveHealthActivity`.
+//     Should the connection ever be granted `operator.read` (a paired device
+//     or a trusted-proxy deployment), `session.*` events start arriving and
+//     are translated on top of it, which simply sharpens the same states.
 //
 //   - Handshake errors are actionable. PROTOCOL_MISMATCH advertises
 //     `expectedProtocol`, so we re-connect with that value rather than
@@ -32,7 +41,9 @@ const {
 } = require("../hooks/server-config");
 const {
   GATEWAY_PROTOCOL_VERSION,
+  HEALTH_EVENT,
   buildConnectParams,
+  deriveHealthActivity,
   mapGatewayEvent,
 } = require("./remote-openclaw-protocol");
 
@@ -151,9 +162,55 @@ function createRemoteOpenclawRuntime(options = {}) {
   let connectRequestId = null;
   // Learned from PROTOCOL_MISMATCH and reused on reconnect.
   let protocolVersion = GATEWAY_PROTOCOL_VERSION;
+  // Granted scopes from the last successful hello. Empty is the normal case
+  // for password/token auth and is what makes the health path primary.
+  let grantedScopes = [];
+  let lastDeliveredState = "";
 
   function setStatus(phase, detail) {
-    emitStatus({ phase, detail: detail || "", at: now() });
+    emitStatus({ phase, detail: detail || "", at: now(), scopes: grantedScopes.slice() });
+  }
+
+  // The pet holds whatever state it was last given, so repeating an unchanged
+  // snapshot would be noise. Only a real transition is worth a POST.
+  //
+  // One exception: an approval (`attention`) is a blocking wait. A coarse
+  // health snapshot saying "the session is still fresh" must not talk the pet
+  // out of it — only a newer gateway event or a genuinely idle snapshot can.
+  function deliverDerived(activity) {
+    if (!activity) return;
+    if (activity.state === lastDeliveredState) return;
+    if (lastDeliveredState === "attention" && activity.state === "working") return;
+
+    const synthetic = {
+      sessionId: activity.sessionId,
+      agentId: activity.sessionTitle,
+    };
+    const body = buildStateBody(activity.state, activity.event, synthetic, options);
+    if (activity.errorPresent) body.error_present = true;
+    lastDeliveredState = activity.state;
+    deliver(body, options.http);
+    emitActivity({
+      state: activity.state,
+      event: activity.event,
+      gatewayEvent: HEALTH_EVENT,
+      degraded: activity.degraded === true,
+    });
+  }
+
+  function handleHealth(payload) {
+    deliverDerived(
+      deriveHealthActivity(payload, {
+        agentFilter: agentFilterString(),
+        nowMs: now(),
+      }),
+    );
+  }
+
+  function agentFilterString() {
+    const filter = options.sessionFilter;
+    if (!filter || typeof filter !== "object") return "";
+    return typeof filter.agentId === "string" ? filter.agentId : "";
   }
 
   function scheduleReconnect(reason) {
@@ -210,7 +267,14 @@ function createRemoteOpenclawRuntime(options = {}) {
     if (frame.type === "res" && frame.id === connectRequestId) {
       if (frame.ok) {
         reconnectAttempt = 0;
+        const hello = frame.payload && typeof frame.payload === "object" ? frame.payload : {};
+        const auth = hello.auth && typeof hello.auth === "object" ? hello.auth : {};
+        grantedScopes = Array.isArray(auth.scopes) ? auth.scopes.filter((s) => typeof s === "string") : [];
         setStatus("connected", "");
+        // The hello carries a full snapshot, so paint a state immediately
+        // instead of waiting out the first health refresh period.
+        const snapshot = hello.snapshot && typeof hello.snapshot === "object" ? hello.snapshot : null;
+        if (snapshot) handleHealth(snapshot.health);
         return;
       }
       const error = frame.error || {};
@@ -231,13 +295,22 @@ function createRemoteOpenclawRuntime(options = {}) {
       return;
     }
 
-    // 3) Broadcast activity.
+    // 3) Health snapshot. Delivered to every connection regardless of scope,
+    // so this is what keeps the pet accurate on credential-only auth.
+    if (frame.type === "event" && frame.event === HEALTH_EVENT) {
+      handleHealth(frame.payload);
+      return;
+    }
+
+    // 4) Broadcast activity. Only arrives once the connection holds
+    // `operator.read`; see the scope note at the top of the protocol module.
     if (frame.type === "event") {
       const mapped = mapGatewayEvent(frame.event, frame.payload);
       if (!mapped) return;
       const payload = frame.payload && typeof frame.payload === "object" ? frame.payload : {};
       if (!acceptsPayload(payload)) return;
       const body = buildStateBody(mapped.state, mapped.event, payload, options);
+      lastDeliveredState = mapped.state;
       deliver(body, options.http);
       emitActivity({ state: mapped.state, event: mapped.event, gatewayEvent: frame.event });
     }
@@ -315,6 +388,8 @@ function createRemoteOpenclawRuntime(options = {}) {
       if (!stopped) return;
       stopped = false;
       reconnectAttempt = 0;
+      grantedScopes = [];
+      lastDeliveredState = "";
       open();
     },
     stop() {
@@ -324,6 +399,8 @@ function createRemoteOpenclawRuntime(options = {}) {
         reconnectTimer = null;
       }
       teardownSocket();
+      grantedScopes = [];
+      lastDeliveredState = "";
       setStatus("stopped", "");
     },
     isRunning() {
@@ -331,6 +408,9 @@ function createRemoteOpenclawRuntime(options = {}) {
     },
     getProtocolVersion() {
       return protocolVersion;
+    },
+    getGrantedScopes() {
+      return grantedScopes.slice();
     },
   };
 }

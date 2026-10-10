@@ -334,6 +334,22 @@
     return note;
   }
 
+  // A password/token connection is granted `role: operator` with an empty
+  // scope list, which means the gateway withholds every `session.*` broadcast.
+  // The pet still tracks the gateway from its `health` snapshots, but that is
+  // coarser than the event stream — worth saying out loud rather than leaving
+  // the user to wonder why the pet only reacts every minute or so.
+  function buildScopeNote() {
+    const status = view.status;
+    if (!status || status.phase !== "connected") return null;
+    const scopes = Array.isArray(status.scopes) ? status.scopes : [];
+    if (scopes.indexOf("operator.read") !== -1) return null;
+    const note = document.createElement("p");
+    note.className = "subtitle";
+    note.textContent = t("remoteOpenclawReadOnlyNote");
+    return note;
+  }
+
   function render(parent) {
     ensureStatusListener();
     ensureCredentialStatus();
@@ -360,6 +376,8 @@
     ]));
 
     parent.appendChild(buildStatusNote());
+    const scopeNote = buildScopeNote();
+    if (scopeNote) parent.appendChild(scopeNote);
   }
 
   function init(core) {

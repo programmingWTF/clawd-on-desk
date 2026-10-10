@@ -29,6 +29,22 @@
 // hooks/openclaw-plugin consumes (`before_tool_call`, `model_call_started`,
 // ...). Those hook names are process-internal to the plugin and never appear
 // on the wire, so the mapping below cannot reuse the plugin's table.
+//
+// IMPORTANT: most of those semantic events are SCOPE-GATED. The gateway's
+// broadcaster (src/gateway/server-broadcast.ts) maps every event name to a
+// required operator scope, and `session.typing` / `session.tool` /
+// `session.message` / `sessions.changed` / ... all require `operator.read`.
+// A password- or token-authenticated connection is granted `role: "operator"`
+// with an EMPTY scope list — `connect-auth.ts` clears self-declared scopes for
+// exactly these auth methods unless the client also presents a paired device
+// identity, which a native desktop client cannot do. So a credential-only
+// client receives NO `session.*` traffic at all, and relying on it would leave
+// the pet frozen on a stale state.
+//
+// What a credential-only client DOES receive is the scope-free broadcast set,
+// and one member of that set is enough: `health`. It carries
+// `sessions.recent[]` (each with `updatedAt` / `age` in ms) plus a per-agent
+// breakdown, refreshed every 60s by default. See deriveHealthActivity below.
 
 const os = require("os");
 
@@ -48,6 +64,10 @@ const AUTH_MODES = new Set(["password", "token"]);
 // Broadcasts that carry no user-visible activity. Forwarding these would keep
 // the pet twitching on an otherwise idle gateway (tick fires every 30s by
 // default — see `policy.tickIntervalMs` in the hello payload).
+//
+// `health` is listed here because it is NOT mapped to a single event — it is
+// read as a snapshot by `deriveHealthActivity` instead. It is the one member
+// of this set that actually moves the pet.
 const HEARTBEAT_EVENTS = new Set([
   "connect.challenge",
   "tick",
@@ -56,6 +76,30 @@ const HEARTBEAT_EVENTS = new Set([
   "presence",
   "models.snapshot",
 ]);
+
+// The events the gateway will actually deliver to a connection with an empty
+// scope list (see the scope-gating note at the top of this file). Kept as
+// documentation for the status line: anything outside this set only arrives
+// once the connection has been granted `operator.read`.
+const SCOPE_FREE_EVENTS = new Set([
+  "tick",
+  "health",
+  "heartbeat",
+  "shutdown",
+  "gateway.suspension",
+  "update.available",
+]);
+
+// The gateway refreshes its health broadcast every 60s
+// (HEALTH_REFRESH_INTERVAL_MS). A session touched within this window is
+// treated as live; one refresh period of slack keeps a slow-but-alive session
+// from flickering back to idle between two snapshots.
+const HEALTH_ACTIVE_WINDOW_MS = 120000;
+
+// The `health` snapshot also arrives inside the hello payload as
+// `snapshot.health`, so a fresh connection can paint a state without waiting
+// a full refresh period.
+const HEALTH_EVENT = "health";
 
 // gateway event → pet activity.
 // `state` must be one of the states the renderer knows; `event` reuses the
@@ -170,6 +214,131 @@ function mapGatewayEvent(eventName, payload = {}) {
   return null;
 }
 
+// ── Health snapshot → pet state ──
+//
+// This is the path that actually works with a password/token credential, so it
+// is the primary source of truth rather than a fallback.
+//
+// Payload shape (gateway `HealthSummary`, mirrored by
+// packages/gateway-protocol/src/schema/snapshot.ts):
+//
+//   {
+//     ok, ts, durationMs,
+//     eventLoop?: { degraded, ... },
+//     sessions?:  { path, count, recent: [{ key, updatedAt, age }] },
+//     agents?:    [{ agentId, name, isDefault, heartbeat, sessions: {...} }],
+//     heartbeatSeconds, defaultAgentId, ...
+//   }
+//
+// `age` is `Date.now() - updatedAt` in milliseconds and may be null for a
+// session that was never written to.
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function freshestSession(entries, nowMs) {
+  let best = null;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!isPlainObject(entry)) continue;
+    const key = typeof entry.key === "string" ? entry.key : "";
+    const age = readFiniteNumber(entry.age);
+    const updatedAt = readFiniteNumber(entry.updatedAt);
+    const ageMs =
+      age !== null && age >= 0 ? age : updatedAt !== null ? Math.max(0, nowMs - updatedAt) : null;
+    if (ageMs === null) continue;
+    if (!best || ageMs < best.ageMs) best = { ageMs, key };
+  }
+  return best;
+}
+
+// The agentFilter is free text (an agent id or a display name). Deliberately
+// exact-match: a substring match would silently follow the wrong agent on a
+// gateway that hosts several.
+function matchHealthAgent(agents, filter) {
+  const needle = typeof filter === "string" ? filter.trim().toLowerCase() : "";
+  if (!needle) return null;
+  for (const agent of Array.isArray(agents) ? agents : []) {
+    if (!isPlainObject(agent)) continue;
+    const id = typeof agent.agentId === "string" ? agent.agentId : "";
+    const name = typeof agent.name === "string" ? agent.name : "";
+    if (id.toLowerCase() === needle || name.toLowerCase() === needle) return agent;
+  }
+  return null;
+}
+
+// Returns { state, event, errorPresent, sessionId, sessionTitle, ageMs,
+// degraded, agentMatched } for a `health` payload, or null when the payload is
+// not a health snapshot at all (e.g. the empty `{}` the gateway sends in the
+// hello before its health cache is warm).
+function deriveHealthActivity(payload, options = {}) {
+  if (!isPlainObject(payload)) return null;
+
+  const nowMs = readFiniteNumber(options.nowMs);
+  const resolvedNow = nowMs === null ? Date.now() : nowMs;
+  const windowMs = readFiniteNumber(options.activeWindowMs);
+  const activeWindow = windowMs === null || windowMs < 0 ? HEALTH_ACTIVE_WINDOW_MS : windowMs;
+  const filter = typeof options.agentFilter === "string" ? options.agentFilter.trim() : "";
+
+  const agents = Array.isArray(payload.agents) ? payload.agents : [];
+  const scoped = matchHealthAgent(agents, filter);
+  // A filter that names an agent the gateway does not host must not fall back
+  // to "follow everything" — that is exactly the mix-up the filter exists to
+  // prevent.
+  if (filter && !scoped) {
+    return {
+      state: "idle",
+      event: "SessionStart",
+      errorPresent: false,
+      sessionId: "",
+      sessionTitle: "",
+      ageMs: null,
+      degraded: false,
+      agentMatched: false,
+    };
+  }
+
+  const summary = scoped && isPlainObject(scoped.sessions) ? scoped.sessions : payload.sessions;
+  const freshest = isPlainObject(summary) ? freshestSession(summary.recent, resolvedNow) : null;
+  const degraded = isPlainObject(payload.eventLoop) && payload.eventLoop.degraded === true;
+
+  const result = {
+    state: "idle",
+    event: "SessionStart",
+    errorPresent: false,
+    sessionId: freshest && freshest.key ? freshest.key : "",
+    sessionTitle: scoped ? firstNonEmpty(scoped.name, scoped.agentId) : "",
+    ageMs: freshest ? freshest.ageMs : null,
+    degraded,
+    agentMatched: true,
+  };
+
+  // A degraded event loop outranks everything else: the gateway is unhealthy
+  // regardless of what its sessions last did.
+  if (degraded) {
+    result.state = "error";
+    result.event = "StopFailure";
+    result.errorPresent = true;
+    return result;
+  }
+  if (freshest && freshest.ageMs <= activeWindow) {
+    result.state = "working";
+    result.event = "PreToolUse";
+  }
+  return result;
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 module.exports = {
   AUTH_MODES,
   GATEWAY_CLIENT_DISPLAY_NAME,
@@ -178,8 +347,12 @@ module.exports = {
   GATEWAY_DEFAULT_PORT,
   GATEWAY_EVENT_MAP,
   GATEWAY_PROTOCOL_VERSION,
+  HEALTH_ACTIVE_WINDOW_MS,
+  HEALTH_EVENT,
   HEARTBEAT_EVENTS,
+  SCOPE_FREE_EVENTS,
   buildConnectParams,
+  deriveHealthActivity,
   isHeartbeatGatewayEvent,
   mapGatewayEvent,
   normalizeGatewayUrl,
