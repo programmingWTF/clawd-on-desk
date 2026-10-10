@@ -3558,7 +3558,10 @@ function drainRemoteSshAndFeishuBeforeQuit() {
     console.error("settings IPC shutdown failed:", err && err.message);
   }
   // Closes the gateway socket so no further /state POSTs land after quit.
-  if (_remoteOpenclawIpc && typeof _remoteOpenclawIpc.dispose === "function") {
+  // Guarded with `typeof` because this drain also runs before the Remote
+  // OpenClaw block has been evaluated during startup failure paths.
+  if (typeof _remoteOpenclawIpc !== "undefined" && _remoteOpenclawIpc
+    && typeof _remoteOpenclawIpc.dispose === "function") {
     try { _remoteOpenclawIpc.dispose(); } catch (err) {
       console.error("remote-openclaw shutdown failed:", err && err.message);
     }
