@@ -25,6 +25,10 @@
     pending: false,
     status: null,
     listenerInstalled: false,
+    // null = not asked yet. The renderer never learns the credential itself,
+    // only whether one is stored — see remote-openclaw-credential-store.js.
+    credentialConfigured: null,
+    credentialPending: false,
   };
 
   function t(key) {
@@ -37,10 +41,49 @@
       enabled: !!(cfg && cfg.enabled),
       url: cfg && typeof cfg.url === "string" ? cfg.url : "",
       authMode: cfg && cfg.authMode === "token" ? "token" : "password",
-      password: cfg && typeof cfg.password === "string" ? cfg.password : "",
-      token: cfg && typeof cfg.token === "string" ? cfg.token : "",
       agentFilter: cfg && typeof cfg.agentFilter === "string" ? cfg.agentFilter : "",
     };
+  }
+
+  // One-shot fetch. Guarded by `credentialConfigured !== null` so a rerender
+  // triggered by the answer does not ask again (and loop).
+  function ensureCredentialStatus() {
+    if (view.credentialConfigured !== null) return;
+    const api = window.remoteOpenclaw;
+    if (!api || typeof api.credentialStatus !== "function") return;
+    view.credentialConfigured = false;
+    api.credentialStatus().then((result) => {
+      view.credentialConfigured = !!(result && result.configured);
+      ops.requestRender({ content: true });
+    }).catch(() => {
+      view.credentialConfigured = false;
+    });
+  }
+
+  function saveCredential(raw) {
+    const api = window.remoteOpenclaw;
+    if (!api || typeof api.setCredential !== "function") {
+      ops.showToast(t("toastSaveFailed"), { error: true });
+      return;
+    }
+    view.credentialPending = true;
+    ops.requestRender({ content: true });
+    api.setCredential(String(raw || "")).then((result) => {
+      view.credentialPending = false;
+      if (!result || result.status !== "ok") {
+        ops.showToast((result && result.message) || t("remoteOpenclawCredentialFailed"), { error: true });
+        ops.requestRender({ content: true });
+        return;
+      }
+      view.credDraft = null;
+      view.credentialConfigured = true;
+      ops.showToast(t("remoteOpenclawCredentialStored"));
+      ops.requestRender({ content: true });
+    }).catch(() => {
+      view.credentialPending = false;
+      ops.showToast(t("remoteOpenclawCredentialFailed"), { error: true });
+      ops.requestRender({ content: true });
+    });
   }
 
   function saveConfig(next) {
@@ -133,21 +176,29 @@
     text.appendChild(desc);
     row.appendChild(text);
 
+    // Both classes are required together: inside a horizontal .row the
+    // input-row's width:100% would squeeze .row-text into a single-glyph
+    // column (see the settings.css note above that rule).
     const ctrl = document.createElement("div");
-    ctrl.className = "row-control";
+    ctrl.className = "row-control tg-approval-input-row";
     const input = document.createElement("input");
     input.type = options.type || "text";
-    input.className = "text-input";
+    input.className = "tg-approval-input";
+    input.spellcheck = false;
+    input.autocomplete = "off";
     input.value = options.value == null ? "" : String(options.value);
     if (options.placeholder) input.placeholder = options.placeholder;
     input.addEventListener("input", () => {
       options.onDraft(input.value);
     });
+    // Credential saves go through their own IPC and their own pending flag;
+    // everything else shares the settings-write flag.
+    const pending = options.pending === undefined ? view.pending : options.pending;
     const saveBtn = helpers.buildButton({
-      labelKey: view.pending ? "remoteOpenclawSaving" : "remoteOpenclawSave",
+      labelKey: pending ? "remoteOpenclawSaving" : "remoteOpenclawSave",
       tone: "accent",
-      disabled: view.pending,
-      pending: view.pending,
+      disabled: pending,
+      pending,
     });
     saveBtn.addEventListener("click", () => {
       options.onSave(input.value);
@@ -208,45 +259,52 @@
 
     const ctrl = document.createElement("div");
     ctrl.className = "row-control";
-    const select = document.createElement("select");
-    select.className = "text-input";
-    const passwordOpt = document.createElement("option");
-    passwordOpt.value = "password";
-    passwordOpt.textContent = t("remoteOpenclawAuthModePassword");
-    const tokenOpt = document.createElement("option");
-    tokenOpt.value = "token";
-    tokenOpt.textContent = t("remoteOpenclawAuthModeToken");
-    select.appendChild(passwordOpt);
-    select.appendChild(tokenOpt);
-    select.value = cfg.authMode;
-    select.addEventListener("change", () => {
-      // Switching modes invalidates whatever credential was typed.
-      view.credDraft = null;
-      saveConfig({ ...cfg, authMode: select.value === "token" ? "token" : "password" });
+    // The gateway accepts either credential shape; this is the project's
+    // standard two-way control, so no new CSS is needed.
+    const control = helpers.buildSegmentedRadio({
+      value: cfg.authMode,
+      ariaLabel: t("remoteOpenclawAuthModeLabel"),
+      options: [
+        { value: "password", label: t("remoteOpenclawAuthModePassword") },
+        { value: "token", label: t("remoteOpenclawAuthModeToken") },
+      ],
+      onChange: (next) => {
+        // Switching modes invalidates whatever credential was typed, and the
+        // stored secret means something different in the other mode — so drop
+        // it rather than try to reinterpret it.
+        view.credDraft = null;
+        view.credentialConfigured = false;
+        const api = window.remoteOpenclaw;
+        if (api && typeof api.clearCredential === "function") {
+          Promise.resolve(api.clearCredential()).catch(() => {});
+        }
+        saveConfig({ ...cfg, authMode: next === "token" ? "token" : "password" });
+      },
     });
-    ctrl.appendChild(select);
+    ctrl.appendChild(control.element);
     row.appendChild(ctrl);
     return row;
   }
 
+  // The field is always empty when rendered: the secret is write-only from the
+  // renderer's point of view, so there is nothing to prefill and nothing to
+  // read back.
   function buildCredentialRow(cfg) {
     const isToken = cfg.authMode === "token";
-    if (view.credDraft === null) view.credDraft = isToken ? cfg.token : cfg.password;
-    const next = { ...cfg };
+    if (view.credDraft === null) view.credDraft = "";
     return buildInputRow(cfg, {
       type: "password",
       label: isToken ? t("remoteOpenclawTokenLabel") : t("remoteOpenclawPasswordLabel"),
-      desc: t("remoteOpenclawCredentialDesc"),
+      desc: view.credentialConfigured
+        ? t("remoteOpenclawCredentialSaved")
+        : t("remoteOpenclawCredentialDesc"),
+      placeholder: view.credentialConfigured ? t("remoteOpenclawCredentialSaved") : "",
       value: view.credDraft,
+      pending: view.credentialPending,
       onDraft: (v) => {
         view.credDraft = v;
       },
-      onSave: (v) => {
-        const raw = String(v || "");
-        if (isToken) next.token = raw;
-        else next.password = raw;
-        saveConfig(next);
-      },
+      onSave: (v) => saveCredential(v),
     });
   }
 
@@ -278,6 +336,7 @@
 
   function render(parent) {
     ensureStatusListener();
+    ensureCredentialStatus();
     const cfg = currentConfig();
 
     const h1 = document.createElement("h1");

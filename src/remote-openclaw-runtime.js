@@ -141,6 +141,8 @@ function createRemoteOpenclawRuntime(options = {}) {
   const now = typeof options.now === "function" ? options.now : Date.now;
   const setTimeoutFn = options.setTimeout || setTimeout;
   const clearTimeoutFn = options.clearTimeout || clearTimeout;
+  // Test-only injection point. Production main.js never overrides this.
+  const deliver = typeof options.deliverState === "function" ? options.deliverState : deliverState;
 
   let socket = null;
   let stopped = true;
@@ -236,7 +238,7 @@ function createRemoteOpenclawRuntime(options = {}) {
       const payload = frame.payload && typeof frame.payload === "object" ? frame.payload : {};
       if (!acceptsPayload(payload)) return;
       const body = buildStateBody(mapped.state, mapped.event, payload, options);
-      deliverState(body, options.http);
+      deliver(body, options.http);
       emitActivity({ state: mapped.state, event: mapped.event, gatewayEvent: frame.event });
     }
   }
